@@ -1,11 +1,14 @@
 
 using System.IO;
+using k8s;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.WebJobs.Host;
 using Newtonsoft.Json;
+
+
 
 namespace openhack04
 {
@@ -21,6 +24,25 @@ namespace openhack04
             string requestBody = new StreamReader(req.Body).ReadToEnd();
             dynamic data = JsonConvert.DeserializeObject(requestBody);
             name = name ?? data?.name;
+
+            //var c= BuildConfigFromConfigFile("), null,
+            //    masterUrl, useRelativePaths);
+
+            var config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
+            IKubernetes client = new Kubernetes(config);
+          //  Console.WriteLine("Starting Request!");
+
+            var list = client.ListNamespacedPod("default");
+            foreach (var item in list.Items)
+            {
+                //Console.WriteLine(item.Metadata.Name);
+            }
+            if (list.Items.Count == 0)
+            {
+               // Console.WriteLine("Empty!");
+            }
+
+
 
             return name != null
                 ? (ActionResult)new OkObjectResult($"Hello, {name}")
