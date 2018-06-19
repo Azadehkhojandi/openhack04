@@ -1,52 +1,115 @@
-
-using System.IO;
+using System;
+using System.Collections.Generic;
 using k8s;
+using k8s.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.WebJobs.Host;
-using Newtonsoft.Json;
-
-
 
 namespace openhack04
 {
     public static class Function1
     {
         [FunctionName("Function1")]
-        public static IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)]HttpRequest req, TraceWriter log)
+        public static IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)]HttpRequest req, TraceWriter log, ExecutionContext context)
         {
             log.Info("C# HTTP trigger function processed a request.");
 
-            string name = req.Query["name"];
+            //var config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
+            var configpath = $"{context.FunctionAppDirectory}\\config\\config.txt";
+            var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(kubeconfigPath: configpath);
 
-            string requestBody = new StreamReader(req.Body).ReadToEnd();
-            dynamic data = JsonConvert.DeserializeObject(requestBody);
-            name = name ?? data?.name;
+            Console.WriteLine("Starting Request!");
 
-            //var c= BuildConfigFromConfigFile("), null,
-            //    masterUrl, useRelativePaths);
-
-            var config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
             IKubernetes client = new Kubernetes(config);
-          //  Console.WriteLine("Starting Request!");
 
-            var list = client.ListNamespacedPod("default");
-            foreach (var item in list.Items)
+            var labels = new Dictionary<string, string>();
+            labels.Add("app", "raincraft");
+
+            var ports = new List<V1ContainerPort>();
+            ports.Add(new V1ContainerPort() { ContainerPort = 25565 });
+            ports.Add(new V1ContainerPort() { ContainerPort = 25575 });
+
+            var env = new List<V1EnvVar>();
+            env.Add(new V1EnvVar() { Name = "EULA", Value = "true" });
+
+            var mounts = new List<V1VolumeMount>();
+            mounts.Add(new V1VolumeMount() { Name = "minedb", MountPath = "/data" });
+
+            var volumes = new List<V1Volume>();
+            volumes.Add(new V1Volume()
             {
-                //Console.WriteLine(item.Metadata.Name);
-            }
-            if (list.Items.Count == 0)
+                Name = "minedb",
+                PersistentVolumeClaim = new V1PersistentVolumeClaimVolumeSource()
+                {
+                    ClaimName = "minevol2"
+                }
+            });
+
+            var spec = new V1PodSpec();
+            spec.Containers = new List<V1Container>();
+            spec.Containers.Add(new V1Container()
             {
-               // Console.WriteLine("Empty!");
+                Name = "raincraft-pod",
+                Image = "openhack/minecraft-server:2.0-alpine",
+                Ports = ports,
+                Env = env,
+                VolumeMounts = mounts
+            });
+            spec.Volumes = volumes;
+
+            var template = new V1PodTemplateSpec()
+            {
+                Metadata = new V1ObjectMeta()
+                {
+                    Name = "raincraft-pod",
+                    Labels = labels
+                },
+                Spec = spec
+            };
+
+            var deployment = new V1Deployment()
+            {
+                ApiVersion = "apps/v1",
+                Kind = "Deployment",
+                Metadata = new V1ObjectMeta()
+                {
+                    Name = "raincraft",
+                },
+                Spec = new V1DeploymentSpec()
+                {
+                    Replicas = 1,
+                    Template = template,
+                    Selector = new V1LabelSelector()
+                    {
+                        MatchLabels = labels
+                    }
+                }
+            };
+
+            deployment.Validate();
+
+            var dresult = client.CreateNamespacedDeployment(deployment, "default");
+
+            var list = new List<string>();
+
+            //foreach (var i in client.ListNamespacedService("default").Items)
+            //{
+            //    if (i.Metadata.Labels.Contains(new KeyValuePair<string, string>("app", "minepod-service")))
+            //        list.Add(i.Metadata.Name);
+            //}
+
+            var pods = client.ListNamespacedPod("default").Items;
+
+            foreach (var i in pods)
+            {
+                if (i.Metadata.Labels.Contains(new KeyValuePair<string, string>("app", "raincraft")))
+                    list.Add(i.Metadata.Name);
             }
 
-
-
-            return name != null
-                ? (ActionResult)new OkObjectResult($"Hello, {name}")
-                : new BadRequestObjectResult("Please pass a name on the query string or in the request body");
+            return new OkObjectResult(list) as ActionResult;
         }
     }
 }
