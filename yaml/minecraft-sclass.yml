@@ -1,0 +1,14 @@
+---
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: minesc2
+provisioner: kubernetes.io/azure-file
+mountOptions:
+  - dir_mode=0755
+  - file_mode=0755
+  - uid=1000
+  - gid=1000
+parameters:
+  storageAccount: minestorageaccount14
+...

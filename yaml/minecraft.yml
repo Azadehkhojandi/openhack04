@@ -1,0 +1,41 @@
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minepod-deployment
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minepod
+  template:
+    metadata:
+      name: minepod
+      labels:
+        app: minepod
+    spec:
+      containers:
+        - name: minecraft
+          image: openhack/minecraft-server:2.0-alpine
+          ports:
+            - containerPort: 25565
+            - containerPort: 25575
+          env:
+            - name: "EULA"
+              value: "true"
+          volumeMounts:
+            - name: "minedb"
+              mountPath: "/data"
+        - name: mcstatus
+          image: mikeyyuen/mcstatus:latest
+          command: ["/bin/bash","-c"]
+          args: ["while true; do mcstatus 127.0.0.1:25565 status; sleep 5s; done"]
+
+      volumes:
+        - name: minedb
+          persistentVolumeClaim:
+            claimName: minevol2
+
+...
