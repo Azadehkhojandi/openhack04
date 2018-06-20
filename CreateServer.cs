@@ -1,3 +1,4 @@
+using System;
 using k8s;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -10,13 +11,26 @@ namespace MineApi
     public static class CreateServer
     {
         [FunctionName("CreateServer")]
-        public static IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = null)]HttpRequest req, TraceWriter log, ExecutionContext context)
+        public static IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "servers/{name}")] HttpRequest req, TraceWriter log, ExecutionContext context, string name)
         {
-            var config = KubernetesClientConfiguration.BuildConfigFromConfigFile($@"{context.FunctionAppDirectory}\config\config.txt");
+            IActionResult result = null;
 
-            var address = new Minecraft(config).Create(req.Query["server"]);
+            try
+            {
+                var config = KubernetesClientConfiguration.BuildConfigFromConfigFile($@"{context.FunctionAppDirectory}\config\config.txt");
 
-            return new OkObjectResult(address) as ActionResult;
+                var address = new Minecraft(config).Create(name);
+
+                result = new ObjectResult(address);
+
+                ((ObjectResult)result).StatusCode = 201;
+            }
+            catch (Exception e)
+            {
+                result = new OkObjectResult(new { name, error = e.Message });
+            }
+
+            return result as ActionResult;
         }
     }
 }

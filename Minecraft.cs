@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using k8s;
 using k8s.Models;
 
@@ -13,26 +14,70 @@ namespace MineApi
             Cluster = new Kubernetes(config);
         }
 
-        public IDictionary<string, IList<string>> GetServers()
+        public IList<Server> GetServers()
         {
-            var result = new Dictionary<string, IList<string>>();
+            var result = new List<Server>();
 
             foreach (var i in Cluster.ListNamespacedService("default").Items)
             {
+                var server = new Server();
+
                 if (i.Metadata.Labels.Contains(new KeyValuePair<string, string>("type", "raincraft")))
-                    result.Add(i.Metadata.Name, i.Spec.ExternalIPs);
+                {
+                    server.Name = i.Metadata.Name;
+
+                    foreach (var o in i.Status?.LoadBalancer?.Ingress)
+                    {
+                        server.Endpoints.Add(new ServerEndpoint()
+                        {
+                            Minecraft = $"{o.Ip}:25565",
+                            Rcon = $"{o.Ip}:25575",
+                        });
+                    }
+
+                    result.Add(server);
+                }
             }
 
             return result;
         }
 
-        public IList<string> Create(string name)
+        public Server Create(string name)
         {
+            var result = new Server();
+
+            if (Found(name))
+                throw new Exception("name already exits");
+
             var labels = new Dictionary<string, string>()
             {
                 { "app", name },
                 { "type", "raincraft" }
             };
+
+            var claim = new V1PersistentVolumeClaim()
+            {
+                ApiVersion = "v1",
+                Kind = "PersistentVolumeClaim",
+                Metadata = new V1ObjectMeta()
+                {
+                    Name = name
+                },
+                Spec = new V1PersistentVolumeClaimSpec()
+                {
+                    AccessModes = new[] { "ReadWriteMany" },
+                    StorageClassName = "minesc2",
+                    Resources = new V1ResourceRequirements()
+                    {
+                        Requests = new Dictionary<string, ResourceQuantity>()
+                        {
+                            { "storage", new ResourceQuantity("5Gi") }
+                        }
+                    }
+                }
+            };
+
+            Cluster.CreateNamespacedPersistentVolumeClaim(claim, "default");
 
             var deployment = new V1Deployment()
             {
@@ -96,7 +141,7 @@ namespace MineApi
                                     Name = "minedb",
                                     PersistentVolumeClaim = new V1PersistentVolumeClaimVolumeSource()
                                     {
-                                        ClaimName = "minevol2"
+                                        ClaimName = name
                                     }
                                 }
                             })
@@ -144,14 +189,53 @@ namespace MineApi
                 }
             }, "default");
 
-            return service.Spec.ExternalIPs;
+            result.Name = service.Metadata.Name;
+
+            foreach (var i in service.Status.LoadBalancer.Ingress)
+            {
+                result.Endpoints.Add(new ServerEndpoint()
+                {
+                    Minecraft = i.Ip,
+                    Rcon = "25565"
+                });
+
+                result.Endpoints.Add(new ServerEndpoint()
+                {
+                    Minecraft = i.Ip,
+                    Rcon = "25575"
+                });
+            }
+
+            return result;
         }
 
         public void Delete(string name)
         {
-            Cluster.DeleteNamespacedDeployment(new V1DeleteOptions(), name, "default");
+            if (!Found(name))
+                throw new Exception("name not found");
 
+            Cluster.DeleteNamespacedDeployment(new V1DeleteOptions(), name, "default");
+            Cluster.DeleteNamespacedPersistentVolumeClaim(new V1DeleteOptions(), name, "default");
             Cluster.DeleteNamespacedService(new V1DeleteOptions(), name, "default");
+        }
+
+        private bool Found(string name)
+        {
+            var result = false;
+
+            foreach (var i in Cluster.ListNamespacedService("default").Items)
+            {
+                if (i.Metadata.Labels.Contains(new KeyValuePair<string, string>("type", "raincraft")))
+                {
+                    if (i.Metadata.Name == name)
+                    {
+                        result = true;
+                        break;
+                    }
+                }
+            }
+
+            return result;
         }
     }
 }

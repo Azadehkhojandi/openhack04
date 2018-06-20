@@ -10,7 +10,7 @@ namespace MineApi
     public class GetServers
     {
         [FunctionName("GetServers")]
-        public static IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = null)] HttpRequest req, TraceWriter log, ExecutionContext context)
+        public static IActionResult Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "servers")] HttpRequest req, TraceWriter log, ExecutionContext context)
         {
             var config = KubernetesClientConfiguration.BuildConfigFromConfigFile($@"{context.FunctionAppDirectory}\config\config.txt");
 
